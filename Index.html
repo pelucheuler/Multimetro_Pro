@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Multímetro - SENA (Evaluación)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1e1e1e; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #fff; }
+        #canvas-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; position: relative;}
+        canvas { width: 100%; height: 100%; outline: none; }
+        
+        /* UI Panels */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; justify-content: space-between; padding: 20px; box-sizing: border-box;}
+        .panel { background: rgba(30, 30, 30, 0.95); border: 1px solid #444; border-radius: 8px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        
+        /* IMPORTANT: pointer-events: auto on the scrolling containers ensures scroll works */
+        #left-panel { width: 330px; display: flex; flex-direction: column; gap: 15px; height: fit-content; max-height: 90vh; overflow-y: auto; pointer-events: auto;}
+        #right-panel { width: 380px; display: flex; flex-direction: column; gap: 15px; height: fit-content; max-height: 90vh; overflow-y: auto; pointer-events: auto;}
+        
+        /* Custom scrollbar for panels */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #777; }
+
+        h2 { margin: 0; color: #4da6ff; font-size: 1.2rem; border-bottom: 1px solid #555; padding-bottom: 8px;}
+        h3 { color: #aaa; font-size: 1rem; margin: 0;}
+        p { line-height: 1.4; font-size: 0.9rem; color: #ddd; margin: 8px 0;}
+        
+        button { background: #4da6ff; color: #1e1e1e; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s;}
+        button:hover { background: #66b3ff; }
+        button.secondary { background: #555; color: white;}
+        button.secondary:hover { background: #777;}
+        button.success { background: #4CAF50; color: white;}
+        button.success:hover { background: #45a049;}
+        
+        select, input { background: #222; color: white; border: 1px solid #555; padding: 10px; border-radius: 4px; width: 100%; margin-top: 5px; box-sizing: border-box; font-size: 0.95rem;}
+        input:focus, select:focus { outline: none; border-color: #4da6ff; }
+        
+        .calc-box { background: rgba(77, 166, 255, 0.1); border: 1px solid #4da6ff; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .calc-box label { font-size: 0.85rem; color: #4da6ff; font-weight: bold;}
+        
+        /* Tooltip & Feedback */
+        .tooltip { position: absolute; background: rgba(0,0,0,0.9); color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; pointer-events: none; display: none; z-index: 10; border: 1px solid #4da6ff;}
+        .msg { padding: 10px; border-radius: 4px; font-size: 0.9rem; margin-top: 10px; display: none; }
+        .msg.correct { background: rgba(76, 175, 80, 0.2); border: 1px solid #4CAF50; color: #a5d6a7; display: block;}
+        .msg.incorrect { background: rgba(244, 67, 54, 0.2); border: 1px solid #F44336; color: #ef9a9a; display: block;}
+        
+        /* Intro Modal */
+        #intro-modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 100; pointer-events: auto; padding: 20px; box-sizing: border-box;}
+        .modal-content { background: #1e1e1e; border-radius: 8px; padding: 30px; width: 600px; max-width: 100%; max-height: 90vh; overflow-y: auto; border: 1px solid #555; display: flex; flex-direction: column; gap: 15px;}
+        .modal-content h1 { margin: 0; color: #4da6ff;}
+        .modal-content ul { padding-left: 20px; line-height: 1.6; color: #ddd;}
+        
+        /* Print Styles */
+        #print-area { display: none; background: white; color: black; padding: 40px; position: absolute; top:0; left:0; width: 100%; min-height: 100%; z-index: 200; box-sizing: border-box; font-family: Arial, sans-serif;}
+        #print-area table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;}
+        #print-area th, #print-area td { border: 1px solid #333; padding: 12px; text-align: left; }
+        #print-area th { background-color: #f0f0f0; }
+        .print-header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;}
+        
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area { display: block; position: absolute; left: 0; top: 0; width: 100%; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+</head>
+<body>
+    
+    <!-- Intro & Registration Modal -->
+    <div id="intro-modal">
+        <div class="modal-content">
+            <h1>Laboratorio: Medición y Cálculo</h1>
+            <p>En esta actividad (1 Hora) deberás combinar la teoría con la práctica. No basta con usar el simulador para tomar la medida; para los componentes que lo requieran (como las resistencias), deberás <b>calcular su valor teórico usando el código de colores</b> e ingresarlo antes de medir.</p>
+            
+            <p><strong>Pasos a seguir:</strong></p>
+            <ul>
+                <li>Selecciona el componente en la protoboard.</li>
+                <li>Realiza el cálculo teórico apoyándote en la <i>Guía de Código de Colores</i> que proporcionó el instructor.</li>
+                <li>Ingresa el valor calculado en la casilla correspondiente.</li>
+                <li>Conecta las puntas y gira el selector del multímetro 3D a la escala correcta.</li>
+                <li>Toma la medida y compara (el sistema calculará el % de error).</li>
+            </ul>
+            
+            <hr style="border: 0; border-top: 1px solid #444; width: 100%; margin: 10px 0;">
+            
+            <h3>Registro del Grupo de Trabajo</h3>
+            <input type="text" id="group-name" placeholder="Nombre del Grupo o Ficha (Ej. Grupo 1 - 21TGPIQN)">
+            <input type="text" id="group-members" placeholder="Nombre de los integrantes (Ej. Alba C., Edwin M.)">
+            
+            <button onclick="startSimulation()" style="margin-top: 15px; font-size: 1.1rem; padding: 12px; min-height: 45px;">Iniciar Simulación</button>
+        </div>
+    </div>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+    
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+        
+        <!-- Left Panel: Info & Probes -->
+        <div id="left-panel">
+            <div class="panel">
+                <h2>Exploración de Equipo</h2>
+                <div id="content-intro">
+                    <p>Usa el ratón para <b>rotar</b> y hacer <b>zoom</b>.</p>
+                    <p>Haz clic en el <b>Dial (Perilla)</b> del multímetro 3D para encenderlo y cambiar la escala de medición.</p>
+                </div>
+                <div id="content-details" style="display: none;">
+                    <h3 id="detail-title">Parte</h3>
+                    <p id="detail-desc">Descripción...</p>
+                    <button class="secondary" onclick="backToIntro()" style="margin-top:10px;">Volver a Instrucciones</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Cables de Prueba (Puntas)</h2>
+                <button id="btn-probe-com" onclick="toggleProbe('COM')" class="secondary">Insertar Punta Negra (COM)</button>
+                <button id="btn-probe-v" onclick="toggleProbe('V')" class="secondary" style="margin-top: 10px;">Insertar Punta Roja (V/Ω/Hz)</button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Workbench & Task -->
+        <div id="right-panel">
+            <div class="panel">
+                <h2>Mesa de Trabajo</h2>
+                <p>Selecciona un componente para colocarlo en la protoboard:</p>
+                <select id="component-select" onchange="loadComponent()">
+                    <option value="none">-- Seleccionar Componente --</option>
+                    <option value="resistor_1k">1. Resistencia (Marrón, Negro, Rojo, Dorado)</option>
+                    <option value="resistor_330">2. Resistencia (Naranja, Naranja, Marrón, Dorado)</option>
+                    <option value="resistor_4k7">3. Resistencia (Amarillo, Violeta, Rojo, Dorado)</option>
+                    <option value="battery_9v">4. Batería 9V DC</option>
+                    <option value="battery_1_5v">5. Pila AA 1.5V DC</option>
+                    <option value="diode_good">6. Diodo Rectificador</option>
+                    <option value="fuse_good">7. Fusible (Buen estado)</option>
+                    <option value="fuse_blown">8. Fusible (Quemado)</option>
+                </select>
+                
+                <div id="measurement-task" style="display:none; margin-top: 15px;">
+                    
+                    <div class="calc-box" id="calc-container">
+                        <label for="calculated-val">Paso 1: Cálculo Teórico</label>
+                        <p style="font-size: 0.8rem; margin: 2px 0;">Ingresa el valor numérico esperado según la teoría (Ej. 1000, 9, 0.6).</p>
+                        <input type="number" id="calculated-val" placeholder="Valor calculado">
+                        <select id="calculated-unit">
+                            <option value="Ω">Ohmios (Ω)</option>
+                            <option value="kΩ">Kilo-Ohmios (kΩ)</option>
+                            <option value="V">Voltios (V)</option>
+                            <option value="Estado">Estado (Ej. Infinito / Continuidad)</option>
+                        </select>
+                    </div>
+
+                    <div style="background: #111; padding: 10px; border-radius: 5px; margin: 10px 0; text-align: center; border: 1px inset #555;">
+                        <span style="font-size: 0.9rem; color: #888; display:block;">Paso 2: Lectura en Pantalla</span>
+                        <strong id="measured-val" style="font-size:1.8em; color:#4da6ff; font-family: monospace;">0.00</strong> 
+                        <span id="measured-unit" style="font-size: 1.2rem; color: #aaa;"></span>
+                    </div>
+
+                    <button onclick="checkMeasurement()" style="margin-top:5px;">Tomar Medida y Evaluar</button>
+                    <div id="feedback-msg" class="msg"></div>
+                </div>
+            </div>
+
+            <div class="panel" style="background: rgba(20, 50, 20, 0.9); border-color: #4CAF50;">
+                <h2>Reporte de Laboratorio</h2>
+                <p>Mediciones registradas: <strong id="measure-count">0</strong>/8</p>
+                <button onclick="generatePDF()" class="success">Generar PDF de Evidencia</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="tooltip" class="tooltip"></div>
+
+    <!-- Hidden Print Area -->
+    <div id="print-area">
+        <div class="print-header">
+            <h1 style="margin: 0 0 10px 0;">Evidencia de Laboratorio: Medición y Cálculo Teórico</h1>
+            <p style="margin: 5px 0;"><strong>Programa:</strong> Automatización - SENA</p>
+            <p style="margin: 5px 0;"><strong>Grupo / Ficha:</strong> <span id="print-group-name"></span></p>
+            <p style="margin: 5px 0;"><strong>Integrantes:</strong> <span id="print-group-members"></span></p>
+            <p style="margin: 5px 0;"><strong>Fecha de simulación:</strong> <span id="print-date"></span></p>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Componente Evaluado</th>
+                    <th>Escala (Dial)</th>
+                    <th>Valor Calculado (Teórico)</th>
+                    <th>Valor Medido (Práctico)</th>
+                    <th>Diferencia / Error</th>
+                </tr>
+            </thead>
+            <tbody id="print-table-body">
+                <!-- Data inserted here -->
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 40px;">
+            <h3>Conclusiones y Análisis del Equipo:</h3>
+            <p style="font-size: 13px; color: #555; margin-bottom: 5px;">Explique brevemente por qué existe diferencia entre los valores calculados teóricamente y los obtenidos en el multímetro (Tolerancia, desgaste, estado de puntas, etc).</p>
+            <div style="border: 1px solid #333; height: 180px; width: 100%;"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Globals & App State ---
+        const dmmState = { dial: 'OFF' };
+        const dialStates = [
+            { id: 'OFF', label: 'OFF', angle: 0 },
+            { id: 'V_DC', label: 'V DC', angle: -Math.PI / 4 },
+            { id: 'V_AC', label: 'V AC', angle: -Math.PI / 2 },
+            { id: 'OHM', label: 'OHM (Ω)', angle: Math.PI / 4 },
+            { id: 'DIODE', label: 'DIODO', angle: Math.PI / 2 },
+            { id: 'A_DC', label: 'A DC', angle: Math.PI }
+        ];
+        let currentDialIdx = 0;
+        const recordedMeasurements = [];
+
+        function startSimulation() {
+            document.getElementById('intro-modal').style.display = 'none';
+        }
+
+        // --- 1. Scene Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 18, 28);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // Mesa
+        const planeGeo = new THREE.PlaneGeometry(80, 50);
+        const planeMat = new THREE.MeshStandardMaterial({ color: 0x2a2a35, roughness: 0.9 });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // --- 2. Protoboard (Breadboard) ---
+        const protoCanvas = document.createElement('canvas');
+        protoCanvas.width = 512; protoCanvas.height = 256;
+        const pCtx = protoCanvas.getContext('2d');
+        pCtx.fillStyle = '#efefef'; 
+        pCtx.fillRect(0,0,512,256);
+        pCtx.fillStyle = '#333'; 
+        for(let i=20; i<500; i+=15) {
+            for(let j=20; j<240; j+=15) {
+                if(j > 110 && j < 145) continue; 
+                pCtx.beginPath(); pCtx.arc(i, j, 3.5, 0, Math.PI*2); pCtx.fill();
+            }
+        }
+        pCtx.fillStyle = '#ccc'; pCtx.fillRect(0, 125, 512, 6); 
+        
+        const protoTex = new THREE.CanvasTexture(protoCanvas);
+        protoTex.wrapS = THREE.RepeatWrapping; protoTex.wrapT = THREE.RepeatWrapping;
+        protoTex.repeat.set(1, 1);
+        
+        const protoMat = new THREE.MeshStandardMaterial({ map: protoTex, roughness: 0.8 });
+        const protoGeo = new THREE.BoxGeometry(14, 0.5, 6);
+        const protoboard = new THREE.Mesh(protoGeo, protoMat);
+        protoboard.position.set(0, 0.25, 8); 
+        protoboard.receiveShadow = true;
+        scene.add(protoboard);
+
+
+        // --- 3. Multimeter ---
+        const dmmGroup = new THREE.Group();
+        scene.add(dmmGroup);
+        const interactableObjects = [];
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const bumperMat = new THREE.MeshStandardMaterial({ color: 0xe6a817, roughness: 0.8 }); 
+        
+        const bodyGeo = new THREE.BoxGeometry(6, 12, 2);
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 6;
+        body.castShadow = true;
+        body.userData = { name: 'Carcasa Principal', desc: 'Recubrimiento protector que aísla los circuitos internos.' };
+        dmmGroup.add(body);
+        interactableObjects.push(body);
+
+        const bumperGeo = new THREE.BoxGeometry(6.4, 12.4, 2.2);
+        const bumper = new THREE.Mesh(bumperGeo, bumperMat);
+        bumper.position.y = 6;
+        dmmGroup.add(bumper);
+
+        // Dial Labels Texture
+        const dialLabelCanvas = document.createElement('canvas');
+        dialLabelCanvas.width = 512; dialLabelCanvas.height = 512;
+        const dlCtx = dialLabelCanvas.getContext('2d');
+        const cx = 256, cy = 256, r = 180;
+        
+        dlCtx.fillStyle = 'rgba(0,0,0,0)'; 
+        dlCtx.fillRect(0,0,512,512);
+        dlCtx.fillStyle = '#ffffff';
+        dlCtx.font = 'bold 36px Arial';
+        dlCtx.textAlign = 'center'; dlCtx.textBaseline = 'middle';
+        
+        dialStates.forEach(st => {
+            const drawAngle = st.angle - Math.PI/2;
+            const tx = cx + Math.cos(drawAngle) * r;
+            const ty = cy + Math.sin(drawAngle) * r;
+            dlCtx.fillText(st.label.split(' ')[0], tx, ty); 
+        });
+        
+        const dialLabelTex = new THREE.CanvasTexture(dialLabelCanvas);
+        const dialLabelPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 4.5), new THREE.MeshBasicMaterial({map: dialLabelTex, transparent: true}));
+        dialLabelPlane.position.set(0, 6, 1.02);
+        dmmGroup.add(dialLabelPlane);
+
+        // Screen
+        const textCanvas = document.createElement('canvas');
+        textCanvas.width = 256; textCanvas.height = 128;
+        const ctx = textCanvas.getContext('2d');
+        const textTexture = new THREE.CanvasTexture(textCanvas);
+        
+        const screenMat = new THREE.MeshStandardMaterial({ color: 0x8a9ba8, map: textTexture });
+        const screenGeo = new THREE.BoxGeometry(4.6, 2.6, 0.2);
+        const screen = new THREE.Mesh(screenGeo, screenMat);
+        screen.position.set(0, 10, 1.05);
+        screen.userData = { name: 'Display LCD', desc: 'Muestra la magnitud leída en números digitales.' };
+        dmmGroup.add(screen);
+        interactableObjects.push(screen);
+
+        function updateScreen(text, unit = "") {
+            ctx.fillStyle = '#8a9ba8'; ctx.fillRect(0, 0, 256, 128);
+            ctx.fillStyle = '#111'; ctx.font = 'bold 55px "Courier New"';
+            ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(text, 190, 64);
+            ctx.font = 'bold 28px Arial'; ctx.textAlign = 'left'; ctx.fillText(unit, 200, 80);
+            textTexture.needsUpdate = true;
+            
+            document.getElementById('measured-val').innerText = text;
+            document.getElementById('measured-unit').innerText = unit;
+        }
+        updateScreen("");
+
+        // Interactive 3D Dial
+        const dialGroup = new THREE.Group();
+        dialGroup.position.set(0, 6, 1.1);
+        dmmGroup.add(dialGroup);
+        
+        const dialBaseGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.4, 32);
+        const dialBase = new THREE.Mesh(dialBaseGeo, new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.7 }));
+        dialBase.rotation.x = Math.PI / 2;
+        dialBase.userData = { isDial: true, name: 'Selector (Girar)', desc: 'Haz clic aquí para girar la perilla y seleccionar la magnitud y escala.' };
+        dialGroup.add(dialBase);
+        
+        const dialHitBox = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.6, 16), new THREE.MeshBasicMaterial({visible: false}));
+        dialHitBox.rotation.x = Math.PI / 2;
+        dialHitBox.userData = dialBase.userData; 
+        dialGroup.add(dialHitBox);
+        interactableObjects.push(dialHitBox);
+        
+        const dialPointer = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 0.5), new THREE.MeshStandardMaterial({color: 0xddd}));
+        dialPointer.position.set(0, 0.5, 0);
+        dialBase.add(dialPointer);
+
+        // Ports
+        const ports = {
+            'A': {x:-1.8, color:0xcc0000}, 'mA': {x:-0.6, color:0xcc0000},
+            'COM': {x:0.6, color:0x000000}, 'V': {x:1.8, color:0xcc0000}
+        };
+        for(let p in ports) {
+            let data = ports[p];
+            let ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.1, 16, 32), new THREE.MeshStandardMaterial({color: data.color}));
+            ring.position.set(data.x, 2, 1.1); dmmGroup.add(ring);
+            let hole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.3, 16), new THREE.MeshStandardMaterial({color: 0x222}));
+            hole.rotation.x = Math.PI/2; hole.position.set(data.x, 2, 1.0); dmmGroup.add(hole);
+            data.pos = new THREE.Vector3(data.x, 2, 1.2);
+            
+            let pBox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.5), new THREE.MeshBasicMaterial({visible:false}));
+            pBox.position.set(data.x, 2, 1.2);
+            pBox.userData = { name: `Puerto ${p}`, desc: `Conector para la punta ${p === 'COM' ? 'negra (referencia)' : 'roja'}.` };
+            dmmGroup.add(pBox);
+            interactableObjects.push(pBox);
+        }
+
+        // Probes
+        const probes = {
+            'COM': { mesh: null, color: 0x111111, conn: false },
+            'V': { mesh: null, color: 0xcc0000, conn: false }
+        };
+        const probeRestPos = { 'COM': new THREE.Vector3(-6, 0.5, 8), 'V': new THREE.Vector3(6, 0.5, 8) };
+
+        function createProbe(type) {
+            const grp = new THREE.Group();
+            const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2, 16), new THREE.MeshStandardMaterial({color: probes[type].color}));
+            handle.rotation.x = Math.PI/2;
+            const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.05, 0.8, 16), new THREE.MeshStandardMaterial({color: 0xccc, metalness:0.8}));
+            tip.rotation.x = Math.PI/2; tip.position.z = 1.4;
+            grp.add(handle, tip);
+            return grp;
+        }
+
+        // --- 4. Component Factory ---
+        const components = {};
+        let currentComponent = null;
+
+        function createResistor(colorCodeParams) {
+            // Very simplified visual representation, color param is the main body for now to distinguish them
+            const grp = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 2, 16), new THREE.MeshStandardMaterial({color: colorCodeParams.baseColor}));
+            body.rotation.z = Math.PI/2; body.position.y = 0.3; 
+            const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.5, 8);
+            const legMat = new THREE.MeshStandardMaterial({color: 0xccc, metalness:0.8});
+            
+            const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set(-1.75, -0.3, 0); 
+            const l2 = new THREE.Mesh(legGeo, legMat); l2.position.set(1.75, -0.3, 0);
+            const h1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.75,8), legMat);
+            h1.rotation.z = Math.PI/2; h1.position.set(-1.375, 0.3, 0);
+            const h2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.75,8), legMat);
+            h2.rotation.z = Math.PI/2; h2.position.set(1.375, 0.3, 0);
+
+            grp.add(body, l1, l2, h1, h2);
+            grp.userData = { c1: new THREE.Vector3(-1.75, 0, 0), c2: new THREE.Vector3(1.75, 0, 0) }; 
+            return grp;
+        }
+
+        function createFuse(blown) {
+            const grp = new THREE.Group();
+            const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 1.6, 16), new THREE.MeshStandardMaterial({color: 0xffffff, transparent: true, opacity: 0.3}));
+            glass.rotation.z = Math.PI/2; glass.position.y = 0.3;
+            const capGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.4, 16);
+            const capMat = new THREE.MeshStandardMaterial({color: 0xdddddd, metalness: 0.9});
+            const c1 = new THREE.Mesh(capGeo, capMat); c1.rotation.z = Math.PI/2; c1.position.set(-0.8, 0.3, 0);
+            const c2 = new THREE.Mesh(capGeo, capMat); c2.rotation.z = Math.PI/2; c2.position.set(0.8, 0.3, 0);
+            
+            if(!blown) {
+                const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 8), new THREE.MeshStandardMaterial({color: 0x555}));
+                wire.rotation.z = Math.PI/2; wire.position.y = 0.3;
+                grp.add(wire);
+            }
+            grp.add(glass, c1, c2);
+            grp.userData = { c1: new THREE.Vector3(-1.0, 0.3, 0), c2: new THREE.Vector3(1.0, 0.3, 0) };
+            return grp;
+        }
+
+        function createDiode() {
+            const grp = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16), new THREE.MeshStandardMaterial({color: 0x111}));
+            body.rotation.z = Math.PI/2; body.position.y = 0.3;
+            const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 16), new THREE.MeshStandardMaterial({color: 0xcccccc}));
+            stripe.rotation.z = Math.PI/2; stripe.position.set(0.4, 0.3, 0); 
+            
+            const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.5, 8);
+            const legMat = new THREE.MeshStandardMaterial({color: 0xccc, metalness:0.8});
+            const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set(-1.35, -0.3, 0);
+            const l2 = new THREE.Mesh(legGeo, legMat); l2.position.set(1.35, -0.3, 0);
+            const h1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.75,8), legMat);
+            h1.rotation.z = Math.PI/2; h1.position.set(-0.975, 0.3, 0);
+            const h2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.75,8), legMat);
+            h2.rotation.z = Math.PI/2; h2.position.set(0.975, 0.3, 0);
+            
+            grp.add(body, stripe, l1, l2, h1, h2);
+            grp.userData = { c1: new THREE.Vector3(-1.35, 0, 0), c2: new THREE.Vector3(1.35, 0, 0) }; 
+            return grp;
+        }
+
+        components['resistor_1k'] = { mesh: createResistor({baseColor: 0xdeb887}), type: 'resistor', val: 1000, unit: 'Ω', name: '1000 Ω (Marrón, Negro, Rojo)' };
+        components['resistor_330'] = { mesh: createResistor({baseColor: 0xdeb887}), type: 'resistor', val: 330, unit: 'Ω', name: '330 Ω (Naranja, Naranja, Marrón)' };
+        components['resistor_4k7'] = { mesh: createResistor({baseColor: 0x7fb3d5}), type: 'resistor', val: 4700, unit: 'Ω', name: '4700 Ω (Amarillo, Violeta, Rojo)' };
+        
+        const bat9 = new THREE.Group();
+        const bat9Body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 1), new THREE.MeshStandardMaterial({color: 0x222}));
+        bat9Body.position.y = 1.25; bat9.add(bat9Body);
+        let term = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.3, 16), new THREE.MeshStandardMaterial({color: 0xccc}));
+        term.position.set(0.4, 2.65, 0); bat9.add(term);
+        let term2 = term.clone(); term2.position.set(-0.4, 2.65, 0); bat9.add(term2);
+        bat9.userData = { c1: new THREE.Vector3(0.4, 2.8, 0), c2: new THREE.Vector3(-0.4, 2.8, 0) }; 
+        components['battery_9v'] = { mesh: bat9, type: 'vdc', val: 9.21, unit: 'V', name: 'Batería 9V DC' };
+
+        const batAA = new THREE.Group();
+        const batAABody = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2.5, 16), new THREE.MeshStandardMaterial({color: 0x2980b9}));
+        batAABody.rotation.z = Math.PI/2; batAABody.position.y = 0.5; batAA.add(batAABody);
+        let nub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.2, 16), new THREE.MeshStandardMaterial({color: 0xccc}));
+        nub.rotation.z = Math.PI/2; nub.position.set(1.35, 0.5, 0); batAA.add(nub);
+        batAA.userData = { c1: new THREE.Vector3(1.45, 0.5, 0), c2: new THREE.Vector3(-1.25, 0.5, 0) }; 
+        components['battery_1_5v'] = { mesh: batAA, type: 'vdc', val: 1.48, unit: 'V', name: 'Pila 1.5V DC' };
+
+        components['diode_good'] = { mesh: createDiode(), type: 'diode', val: 0.612, unit: 'V', name: 'Diodo (Caída de tensión)' };
+        components['fuse_good'] = { mesh: createFuse(false), type: 'fuse', val: 0.1, unit: 'Ω', name: 'Fusible (Buen estado)' };
+        components['fuse_blown'] = { mesh: createFuse(true), type: 'fuse', val: Infinity, unit: 'Ω', name: 'Fusible (Quemado / Abierto)' };
+
+
+        // --- 5. Interactions & Logic ---
+        function advanceDial() {
+            currentDialIdx = (currentDialIdx + 1) % dialStates.length;
+            const st = dialStates[currentDialIdx];
+            dmmState.dial = st.id;
+            
+            new TWEEN.Tween(dialBase.rotation).to({ y: st.angle }, 300).easing(TWEEN.Easing.Quadratic.Out).start();
+            
+            const msgEl = document.getElementById('feedback-msg');
+            msgEl.className = 'msg correct';
+            msgEl.innerHTML = `Escala seleccionada: <b>${st.label}</b>`;
+            msgEl.style.display = 'block';
+            
+            calcReading();
+        }
+
+        window.toggleProbe = function(type) {
+            let p = probes[type];
+            if(!p.mesh) { p.mesh = createProbe(type); scene.add(p.mesh); p.mesh.position.copy(probeRestPos[type]); }
+            
+            p.conn = !p.conn;
+            document.getElementById(type==='COM'?'btn-probe-com':'btn-probe-v').innerText = p.conn ? `Retirar Punta ${type==='COM'?'Negra':'Roja'}` : `Insertar Punta ${type==='COM'?'Negra (COM)':'Roja (V/Ω)'}`;
+            
+            let tgt = p.conn ? ports[type].pos.clone().add(new THREE.Vector3(0,0,1.5)) : probeRestPos[type];
+            let look = p.conn ? new THREE.Vector3(0,0,-1) : new THREE.Vector3(0,0,1);
+            
+            new TWEEN.Tween(p.mesh.position).to(tgt, 500).start();
+            let dummy = new THREE.Object3D(); dummy.position.copy(tgt); dummy.lookAt(tgt.clone().add(look));
+            new TWEEN.Tween(p.mesh.quaternion).to({x:dummy.quaternion.x, y:dummy.quaternion.y, z:dummy.quaternion.z, w:dummy.quaternion.w}, 500).start();
+            
+            calcReading();
+        }
+
+        window.loadComponent = function() {
+            let val = document.getElementById('component-select').value;
+            if(currentComponent) scene.remove(currentComponent.mesh);
+            document.getElementById('measurement-task').style.display = 'none';
+            document.getElementById('feedback-msg').style.display = 'none';
+            document.getElementById('calculated-val').value = '';
+            
+            if(val !== 'none') {
+                currentComponent = components[val];
+                currentComponent.mesh.position.set(0, 0.5, 8.5); 
+                scene.add(currentComponent.mesh);
+                document.getElementById('measurement-task').style.display = 'block';
+                
+                calcReading();
+            } else {
+                currentComponent = null;
+            }
+        }
+
+        function calcReading() {
+            if(dmmState.dial === 'OFF') { updateScreen(""); return; }
+            if(!probes['COM'].conn || !probes['V'].conn || !currentComponent) { updateScreen("0.L"); return; }
+            updateScreen("----"); 
+        }
+
+        window.checkMeasurement = function() {
+            let msg = document.getElementById('feedback-msg');
+            msg.style.display = 'block';
+            
+            const calcVal = document.getElementById('calculated-val').value.trim();
+            const calcUnit = document.getElementById('calculated-unit').value;
+            
+            if(calcVal === "") {
+                msg.innerHTML = "❌ Debes ingresar primero tu cálculo teórico en el Paso 1."; msg.className = "msg incorrect"; return;
+            }
+            if(!probes['COM'].conn || !probes['V'].conn) {
+                msg.innerHTML = "❌ Conecta ambas puntas al multímetro primero."; msg.className = "msg incorrect"; return;
+            }
+            if(!currentComponent) return;
+
+            let c1 = currentComponent.mesh.userData.c1.clone().applyMatrix4(currentComponent.mesh.matrixWorld);
+            let c2 = currentComponent.mesh.userData.c2.clone().applyMatrix4(currentComponent.mesh.matrixWorld);
+            
+            function mvP(t, pos, lk) {
+                new TWEEN.Tween(probes[t].mesh.position).to(pos, 500).start();
+                let d = new THREE.Object3D(); d.position.copy(pos); d.lookAt(pos.clone().add(lk));
+                new TWEEN.Tween(probes[t].mesh.quaternion).to({x:d.quaternion.x, y:d.quaternion.y, z:d.quaternion.z, w:d.quaternion.w}, 500).start();
+            }
+            mvP('COM', c2.clone().add(new THREE.Vector3(-0.5, 2, 0)), new THREE.Vector3(0.5, -2, 0));
+            mvP('V', c1.clone().add(new THREE.Vector3(0.5, 2, 0)), new THREE.Vector3(-0.5, -2, 0));
+
+            setTimeout(() => {
+                let dial = dmmState.dial;
+                let c = currentComponent;
+                let val = "0.00", unit = "";
+                let success = false;
+                
+                if(dial === 'OHM' && (c.type === 'resistor' || c.type === 'fuse')) {
+                    if(c.val === Infinity) { val = "0.L"; unit = ""; }
+                    else {
+                        let v = c.val * (1 + (Math.random()*0.04 - 0.02)); 
+                        if(v > 900) { val = (v/1000).toFixed(3); unit = "kΩ"; }
+                        else { val = v.toFixed(1); unit = "Ω"; }
+                    }
+                    msg.innerHTML = "✅ Escala correcta. Medición tomada."; msg.className="msg correct";
+                    success = true;
+                }
+                else if(dial === 'V_DC' && c.type === 'vdc') {
+                    val = (c.val - (Math.random()*0.02)).toFixed(2); unit = "V";
+                    msg.innerHTML = "✅ Medición de Voltaje DC correcta."; msg.className="msg correct";
+                    success = true;
+                }
+                else if(dial === 'DIODE' && c.type === 'diode') {
+                    val = (c.val + (Math.random()*0.01)).toFixed(3); unit = "V";
+                    msg.innerHTML = "✅ Diodo polarizado directamente."; msg.className="msg correct";
+                    success = true;
+                }
+                else if(dial === 'DIODE' && c.type === 'fuse') {
+                     if(c.val === Infinity) { val = "0.L"; unit = ""; msg.innerHTML = "✅ Sin continuidad. Fusible quemado."; }
+                     else { val = "0.001"; unit = "V"; msg.innerHTML = "✅ Continuidad sonora. Fusible OK."; }
+                     msg.className="msg correct";
+                     success = true;
+                }
+                else {
+                    val = "0.00"; unit = "";
+                    msg.innerHTML = "❌ Escala incorrecta en el dial para este componente."; msg.className="msg incorrect";
+                }
+                
+                updateScreen(val, unit);
+                
+                if(success) {
+                    let calcString = calcVal + " " + calcUnit;
+                    
+                    // Simple error calculation if both are numbers
+                    let errStr = "-";
+                    let vTheo = parseFloat(calcVal);
+                    let vMeas = parseFloat(val);
+                    if(unit === "kΩ" && calcUnit === "Ω") vMeas = vMeas * 1000;
+                    if(unit === "Ω" && calcUnit === "kΩ") vTheo = vTheo * 1000;
+                    
+                    if(!isNaN(vTheo) && !isNaN(vMeas) && vTheo > 0 && val !== "0.L") {
+                        let err = Math.abs((vMeas - vTheo)/vTheo) * 100;
+                        errStr = err.toFixed(1) + "%";
+                    } else if (val === "0.L" || isNaN(vTheo)) {
+                        errStr = "N/A";
+                    }
+
+                    recordMeasurement(c.name, dialStates.find(d => d.id === dial).label, calcString, val + " " + unit, errStr);
+                }
+            }, 600);
+        }
+
+        function recordMeasurement(comp, scale, theo, meas, err) {
+            if(!recordedMeasurements.some(m => m.comp === comp)) {
+                recordedMeasurements.push({comp, scale, theo, meas, err});
+                document.getElementById('measure-count').innerText = recordedMeasurements.length;
+            } else {
+                // Update existing
+                let idx = recordedMeasurements.findIndex(m => m.comp === comp);
+                recordedMeasurements[idx] = {comp, scale, theo, meas, err};
+            }
+        }
+
+        window.generatePDF = function() {
+            if(recordedMeasurements.length === 0) {
+                alert("Debes tomar al menos una medida correcta antes de generar el reporte.");
+                return;
+            }
+            document.getElementById('print-group-name').innerText = document.getElementById('group-name').value || "No especificado";
+            document.getElementById('print-group-members').innerText = document.getElementById('group-members').value || "No especificado";
+            document.getElementById('print-date').innerText = new Date().toLocaleDateString();
+            
+            const tbody = document.getElementById('print-table-body');
+            tbody.innerHTML = '';
+            recordedMeasurements.forEach(m => {
+                let tr = document.createElement('tr');
+                tr.innerHTML = `<td>${m.comp}</td><td>${m.scale}</td><td>${m.theo}</td><td><strong>${m.meas}</strong></td><td>${m.err}</td>`;
+                tbody.appendChild(tr);
+            });
+            window.print();
+        }
+
+        // --- 6. Raycaster ---
+        const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+        
+        window.addEventListener('mousemove', e => {
+            if(document.getElementById('intro-modal').style.display !== 'none') return;
+            
+            mouse.x = (e.clientX/window.innerWidth)*2-1; mouse.y = -(e.clientY/window.innerHeight)*2+1;
+            ray.setFromCamera(mouse, camera);
+            let ints = ray.intersectObjects(interactableObjects);
+            let t = document.getElementById('tooltip');
+            if(ints.length>0 && ints[0].object.userData.name) {
+                t.style.display='block'; t.style.left=e.clientX+15+'px'; t.style.top=e.clientY+15+'px';
+                t.innerText = ints[0].object.userData.name; 
+                document.body.style.cursor='pointer';
+            } else { t.style.display='none'; document.body.style.cursor='default'; }
+        });
+
+        window.addEventListener('click', e => {
+            if(document.getElementById('intro-modal').style.display !== 'none') return;
+            
+            ray.setFromCamera(mouse, camera);
+            let ints = ray.intersectObjects(interactableObjects);
+            if(ints.length>0 && ints[0].object.userData.name) {
+                const obj = ints[0].object;
+                if(obj.userData.isDial) {
+                    advanceDial();
+                } else {
+                    document.getElementById('content-intro').style.display = 'none';
+                    document.getElementById('content-details').style.display = 'block';
+                    document.getElementById('detail-title').innerText = obj.userData.name;
+                    document.getElementById('detail-desc').innerText = obj.userData.desc;
+                    new TWEEN.Tween(obj.scale).to({x:0.95,y:0.95,z:0.95}, 100).yoyo(true).repeat(1).start();
+                }
+            }
+        });
+
+        window.backToIntro = () => { document.getElementById('content-intro').style.display='block'; document.getElementById('content-details').style.display='none'; }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function animate(time) { requestAnimationFrame(animate); TWEEN.update(time); controls.update(); renderer.render(scene, camera); }
+        animate();
+    </script>
+</body>
+</html>
